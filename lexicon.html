@@ -1,0 +1,1165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>标准词库</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="logo">翻译工作台</div>
+      <nav class="topnav">
+        <a href="index.html">词条翻译</a>
+        <a class="active" href="lexicon.html">标准词库</a>
+      </nav>
+      <div class="top-actions"></div>
+    </div>
+  </header>
+
+  <main class="page-main">
+    <section class="panel content-panel split">
+      <div class="main-header compact">
+        <h1>标准词库</h1>
+        <div class="btn-group">
+          <button id="loadStoredLexiconBtn">引入系统词库</button>
+          <button class="primary" id="openAiIdentifyBtn">AI鉴别</button>
+          <button id="updateLexiconBtn">更新系统词库</button>
+          <button id="downloadTemplateBtn">下载模板</button>
+          <button id="exportLexiconBtn">导出词库</button>
+        </div>
+      </div>
+
+      <div class="dropzone">
+        <div class="upload-icon">↑</div>
+        <strong>拖拽 CSV 文件到此处</strong>
+        <div class="btn-group" id="chooseActionGroup">
+          <button id="chooseFileBtn">选择 CSV 文件</button>
+        </div>
+        <div class="btn-group" id="selectedActionGroup" style="display:none;">
+          <button class="primary" id="parseFileBtn">导入并解析</button>
+          <button id="rechooseFileBtn">重新选择</button>
+          <button id="removeFileBtn">移除</button>
+        </div>
+        <input id="csvFileInput" type="file" accept=".csv,text/csv" style="display:none" />
+        <div class="hint" id="filePickedHint">未选择文件</div>
+      </div>
+
+      <div class="toolbar compact">
+        <div class="toolbar-left">
+          <input class="search" id="searchInput" placeholder="搜索 source_text / translation_en" />
+          <span class="inline-note" id="lexiconStats">当前词库 0 条</span>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 35%;">source_text</th>
+              <th style="width: 35%;">translation_en</th>
+              <th style="width: 10%;">词条类型</th>
+              <th style="width: 20%;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="lexiconTbody">
+            <tr>
+              <td colspan="4" class="table-empty">
+                <div class="table-empty-box">
+                  <div class="table-empty-emoji">📚</div>
+                  <div class="table-empty-title">还没有标准词库词条</div>
+                  <div class="table-empty-desc">先选择 CSV 文件并点击“导入并解析”</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="drawer-mask" id="drawerMask"></div>
+  <aside class="drawer" id="termDrawer" aria-label="编辑词条抽屉">
+    <div class="drawer-header">
+      <h2>编辑词条</h2>
+      <button class="text" id="closeDrawerBtn">关闭</button>
+    </div>
+      <div class="drawer-body">
+        <div class="form-item">
+          <label>source_text</label>
+          <textarea id="editSourceInput" rows="4"></textarea>
+        </div>
+        <div class="form-item">
+          <label>translation_en</label>
+          <textarea id="editTranslationInput" rows="4"></textarea>
+        </div>
+        <div class="form-item">
+          <label>词条类型</label>
+          <input id="editTypeInput" disabled />
+        </div>
+      </div>
+    <div class="drawer-footer">
+      <button id="cancelDrawerBtn">取消</button>
+      <button class="primary" id="saveDrawerBtn">保存</button>
+    </div>
+  </aside>
+
+  <div class="progress-modal-mask" id="aiIdentifyMask" style="display:none;">
+    <div class="progress-modal identify-modal">
+      <div class="identify-modal-head">
+        <div class="progress-modal-title">🧠 AI鉴别候选系统词条</div>
+        <button id="cancelAiIdentifyBtn">关闭</button>
+      </div>
+      <div class="identify-guide">
+        <strong>文件要求：</strong>表头与词条翻译模板一致（`key,source_text,context_info`）。
+      </div>
+
+      <div class="dropzone identify-dropzone" id="aiIdentifyDropzone">
+        <div class="upload-icon">↑</div>
+        <strong>拖拽 CSV 文件到此处</strong>
+        <div class="btn-group" id="aiIdentifyChooseActionGroup">
+          <button id="aiIdentifyPickFileBtn">选择 CSV 文件</button>
+        </div>
+        <div class="btn-group" id="aiIdentifySelectedActionGroup" style="display:none;">
+          <button class="primary" id="runAiIdentifyBtn">AI鉴别</button>
+          <button id="aiIdentifyRechooseFileBtn">重新选择</button>
+          <button id="aiIdentifyRemoveFileBtn">移除</button>
+        </div>
+        <input id="aiIdentifyFileInput" type="file" accept=".csv,text/csv" style="display:none" />
+        <div class="hint" id="aiIdentifyFileHint">未选择文件</div>
+      </div>
+
+      <div class="identify-result-wrap" id="aiIdentifyResultWrap" style="display:none;">
+        <div class="toolbar compact identify-toolbar">
+          <div class="toolbar-left">
+            <label class="checkbox-inline">
+              <input type="checkbox" id="aiIdentifySelectAll" />
+              <span>全选</span>
+            </label>
+            <label class="checkbox-inline">
+              <input type="checkbox" id="aiIdentifyHighOnly" />
+              <span>仅看高置信度</span>
+            </label>
+            <span class="inline-note" id="aiIdentifyStats">候选 0 条</span>
+          </div>
+        </div>
+        <div class="table-wrap identify-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 8%;">选择</th>
+                <th style="width: 12%;">置信度</th>
+                <th style="width: 35%;">source_text</th>
+                <th style="width: 45%;">translation_en</th>
+              </tr>
+            </thead>
+            <tbody id="aiIdentifyResultTbody"></tbody>
+          </table>
+        </div>
+        <div class="progress-modal-actions">
+          <button class="primary" id="aiIdentifyConfirmBtn">加入标准词库</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const loadStoredLexiconBtn = document.getElementById('loadStoredLexiconBtn');
+    const openAiIdentifyBtn = document.getElementById('openAiIdentifyBtn');
+    const updateLexiconBtn = document.getElementById('updateLexiconBtn');
+    const chooseFileBtn = document.getElementById('chooseFileBtn');
+    const parseFileBtn = document.getElementById('parseFileBtn');
+    const rechooseFileBtn = document.getElementById('rechooseFileBtn');
+    const removeFileBtn = document.getElementById('removeFileBtn');
+    const exportLexiconBtn = document.getElementById('exportLexiconBtn');
+    const downloadTemplateBtn = document.getElementById('downloadTemplateBtn');
+    const searchInput = document.getElementById('searchInput');
+    const filePickedHint = document.getElementById('filePickedHint');
+    const csvFileInput = document.getElementById('csvFileInput');
+    const dropzone = document.querySelector('.dropzone');
+    const lexiconTbody = document.getElementById('lexiconTbody');
+    const lexiconStats = document.getElementById('lexiconStats');
+    const chooseActionGroup = document.getElementById('chooseActionGroup');
+    const selectedActionGroup = document.getElementById('selectedActionGroup');
+    const drawer = document.getElementById('termDrawer');
+    const drawerMask = document.getElementById('drawerMask');
+    const closeDrawerBtn = document.getElementById('closeDrawerBtn');
+    const cancelDrawerBtn = document.getElementById('cancelDrawerBtn');
+    const saveDrawerBtn = document.getElementById('saveDrawerBtn');
+    const editSourceInput = document.getElementById('editSourceInput');
+    const editTranslationInput = document.getElementById('editTranslationInput');
+    const editTypeInput = document.getElementById('editTypeInput');
+    const aiIdentifyMask = document.getElementById('aiIdentifyMask');
+    const aiIdentifyPickFileBtn = document.getElementById('aiIdentifyPickFileBtn');
+    const runAiIdentifyBtn = document.getElementById('runAiIdentifyBtn');
+    const cancelAiIdentifyBtn = document.getElementById('cancelAiIdentifyBtn');
+    const aiIdentifyRechooseFileBtn = document.getElementById('aiIdentifyRechooseFileBtn');
+    const aiIdentifyRemoveFileBtn = document.getElementById('aiIdentifyRemoveFileBtn');
+    const aiIdentifyFileInput = document.getElementById('aiIdentifyFileInput');
+    const aiIdentifyFileHint = document.getElementById('aiIdentifyFileHint');
+    const aiIdentifyDropzone = document.getElementById('aiIdentifyDropzone');
+    const aiIdentifyChooseActionGroup = document.getElementById('aiIdentifyChooseActionGroup');
+    const aiIdentifySelectedActionGroup = document.getElementById('aiIdentifySelectedActionGroup');
+    const aiIdentifyResultWrap = document.getElementById('aiIdentifyResultWrap');
+    const aiIdentifyResultTbody = document.getElementById('aiIdentifyResultTbody');
+    const aiIdentifySelectAll = document.getElementById('aiIdentifySelectAll');
+    const aiIdentifyHighOnly = document.getElementById('aiIdentifyHighOnly');
+    const aiIdentifyStats = document.getElementById('aiIdentifyStats');
+    const aiIdentifyConfirmBtn = document.getElementById('aiIdentifyConfirmBtn');
+
+    let selectedCsvFile = null;
+    let isParsing = false;
+    let searchKeyword = '';
+    let lexiconRows = [];
+    let rowIdSeed = 1;
+    let editingRowId = null;
+    let isUpdatingLexicon = false;
+    let hasUnsavedChanges = false;
+    let aiIdentifyFile = null;
+    let isAiIdentifying = false;
+    let aiIdentifyParsedRows = [];
+    let aiIdentifyCandidateRows = [];
+    let aiIdentifyFilteredRows = [];
+    let aiIdentifySelectedSet = new Set();
+    let aiIdentifyFilteredExistingCount = 0;
+
+    // 函数：normalizeText。
+    function normalizeText(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    // 函数：escapeHtml。
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // 轻量 CSV 解析器：用于标准词库导入与导出。
+    // 函数：parseCsv。
+    function parseCsv(text) {
+      const rows = [];
+      let row = [];
+      let field = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const next = text[i + 1];
+
+        if (ch === '"' && inQuotes && next === '"') {
+          field += '"';
+          i++;
+          continue;
+        }
+        if (ch === '"') {
+          inQuotes = !inQuotes;
+          continue;
+        }
+        if (ch === ',' && !inQuotes) {
+          row.push(field);
+          field = '';
+          continue;
+        }
+        if ((ch === '\n' || ch === '\r') && !inQuotes) {
+          if (ch === '\r' && next === '\n') i++;
+          row.push(field);
+          field = '';
+          if (row.some((v) => String(v).trim() !== '')) rows.push(row);
+          row = [];
+          continue;
+        }
+        field += ch;
+      }
+      row.push(field);
+      if (row.some((v) => String(v).trim() !== '')) rows.push(row);
+      return rows;
+    }
+
+    // 函数：toCsvField。
+    function toCsvField(value) {
+      const text = String(value ?? '');
+      if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+      return text;
+    }
+
+    // 函数：headerIndex。
+    function headerIndex(headers, candidates) {
+      const normalized = headers.map((h) => String(h).trim().toLowerCase());
+      for (const key of candidates) {
+        const idx = normalized.indexOf(key);
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    }
+
+    // 函数：buildEmptyState。
+    function buildEmptyState(emoji, title, desc) {
+      return `
+        <tr>
+          <td colspan="4" class="table-empty">
+            <div class="table-empty-box">
+              <div class="table-empty-emoji">${emoji}</div>
+              <div class="table-empty-title">${title}</div>
+              <div class="table-empty-desc">${desc}</div>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    // 按 source_text 去重，重复时以后出现的数据为准。
+    // 函数：dedupeBySourceText。
+    function dedupeBySourceText(rows) {
+      const map = new Map();
+      rows.forEach((row) => {
+        const sourceText = String(row.source_text || '').trim();
+        if (!sourceText) return;
+        map.set(sourceText, {
+          source_text: sourceText,
+          translation_en: String(row.translation_en || '').trim(),
+          lexicon_type: String(row.lexicon_type || '').trim() || '引入词条'
+        });
+      });
+      return Array.from(map.values());
+    }
+
+    // 函数：toPlainRows。
+    function toPlainRows(rows) {
+      return rows.map((row) => ({
+        source_text: String(row.source_text || '').trim(),
+        translation_en: String(row.translation_en || '').trim(),
+        lexicon_type: String(row.lexicon_type || '').trim() || '引入词条'
+      }));
+    }
+
+    // 合并时同名 source_text 以新导入数据覆盖旧数据。
+    // 函数：mergeRowsWithIncomingPriority。
+    function mergeRowsWithIncomingPriority(currentRows, incomingRows) {
+      return dedupeBySourceText([
+        ...toPlainRows(currentRows),
+        ...toPlainRows(incomingRows)
+      ]);
+    }
+
+    // 函数：resetSelectionUI。
+    function resetSelectionUI() {
+      selectedCsvFile = null;
+      csvFileInput.value = '';
+      filePickedHint.textContent = '未选择文件';
+      chooseActionGroup.style.display = 'flex';
+      selectedActionGroup.style.display = 'none';
+    }
+
+    // 函数：selectCsvFile。
+    function selectCsvFile(file) {
+      if (!file) return false;
+      const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv';
+      if (!isCsv) {
+        alert('仅支持 CSV 文件');
+        resetSelectionUI();
+        return false;
+      }
+      selectedCsvFile = file;
+      filePickedHint.textContent = `已选择：${file.name} · ${(file.size / 1024).toFixed(1)} KB`;
+      chooseActionGroup.style.display = 'none';
+      selectedActionGroup.style.display = 'flex';
+      return true;
+    }
+
+    // 函数：finishParsing。
+    function finishParsing() {
+      isParsing = false;
+      parseFileBtn.textContent = '导入并解析';
+      parseFileBtn.disabled = false;
+      rechooseFileBtn.disabled = false;
+      removeFileBtn.disabled = false;
+    }
+
+    // 函数：openDrawer。
+    function openDrawer() {
+      drawer.classList.add('open');
+      drawerMask.classList.add('open');
+    }
+
+    // 函数：closeDrawer。
+    function closeDrawer() {
+      drawer.classList.remove('open');
+      drawerMask.classList.remove('open');
+      editingRowId = null;
+    }
+
+    // 函数：setUnsavedChanges。
+    function setUnsavedChanges(next) {
+      hasUnsavedChanges = Boolean(next);
+      updateLexiconBtn.textContent = hasUnsavedChanges ? '更新系统词库（待更新）' : '更新系统词库';
+      if (!isUpdatingLexicon) {
+        updateLexiconBtn.disabled = !hasUnsavedChanges;
+      }
+    }
+
+    // 函数：reindexRows。
+    function reindexRows(rows) {
+      rowIdSeed = 1;
+      return dedupeBySourceText(rows).map((row) => ({ id: rowIdSeed++, ...row }));
+    }
+
+    // 通过后端接口读取 data/standard-lexicon.csv 中的系统词库。
+    // 函数：fetchStoredLexiconRows。
+    async function fetchStoredLexiconRows() {
+      const resp = await fetch('/api/lexicon');
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`读取系统词库失败：${resp.status} ${errText}`);
+      }
+      const data = await resp.json();
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      return rows.map((item) => ({
+        source_text: String(item?.source_text || item?.source || '').trim(),
+        translation_en: String(item?.translation_en || item?.translation || '').trim(),
+        lexicon_type: String(item?.lexicon_type || item?.type || '').trim() || '引入词条'
+      }));
+    }
+
+    // 将当前内存词库写回后端 CSV 文件。
+    // 函数：updateStoredLexiconRows。
+    async function updateStoredLexiconRows() {
+      const payload = {
+        rows: lexiconRows.map((row) => ({
+          source_text: row.source_text,
+          translation_en: row.translation_en,
+          lexicon_type: row.lexicon_type || '引入词条'
+        }))
+      };
+      const resp = await fetch('/api/lexicon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`更新系统词库失败：${resp.status} ${errText}`);
+      }
+    }
+
+    // 函数：getFilteredRows。
+    function getFilteredRows() {
+      const kw = normalizeText(searchKeyword);
+      if (!kw) return lexiconRows;
+      return lexiconRows.filter((row) => {
+        const haystack = `${normalizeText(row.source_text)}\n${normalizeText(row.translation_en)}`;
+        return haystack.includes(kw);
+      });
+    }
+
+    // 函数：updateStats。
+    function updateStats() {
+      const dirtyText = hasUnsavedChanges ? '（待更新）' : '';
+      lexiconStats.textContent = `当前词库 ${lexiconRows.length} 条${dirtyText}`;
+      exportLexiconBtn.disabled = lexiconRows.length === 0;
+    }
+
+    // 函数：getTypeBadgeClass。
+    function getTypeBadgeClass(type) {
+      if (type === '导入词条') return 'lexicon-type-badge is-imported';
+      if (type === '引入词条') return 'lexicon-type-badge is-system';
+      if (type === 'AI鉴别') return 'lexicon-type-badge is-ai-identify';
+      return 'lexicon-type-badge is-unknown';
+    }
+
+    // 渲染过滤后的词库行，并绑定行内编辑/删除事件。
+    // 函数：renderRows。
+    function renderRows() {
+      const rows = getFilteredRows();
+      if (!lexiconRows.length) {
+        lexiconTbody.innerHTML = buildEmptyState('📚', '还没有标准词库词条', '先选择 CSV 文件并点击“导入并解析”');
+        updateStats();
+        return;
+      }
+      if (!rows.length) {
+        lexiconTbody.innerHTML = buildEmptyState('🔎', '没有匹配结果', '请尝试更换关键词');
+        updateStats();
+        return;
+      }
+
+      lexiconTbody.innerHTML = rows.map((row) => `
+        <tr data-id="${row.id}">
+          <td class="cell-multiline">${escapeHtml(row.source_text)}</td>
+          <td class="cell-multiline">${escapeHtml(row.translation_en)}</td>
+          <td><span class="${getTypeBadgeClass(row.lexicon_type || '引入词条')}">${escapeHtml(row.lexicon_type || '引入词条')}</span></td>
+          <td class="ops">
+            <div class="btn-group">
+              <button class="edit-row-btn">编辑</button>
+              <button class="danger delete-row-btn">删除</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      const editBtns = document.querySelectorAll('.edit-row-btn');
+      editBtns.forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          const tr = e.target.closest('tr');
+          const id = Number(tr && tr.dataset && tr.dataset.id);
+          const row = lexiconRows.find((item) => item.id === id);
+          if (!row) return;
+          editingRowId = id;
+          editSourceInput.value = row.source_text || '';
+          editTranslationInput.value = row.translation_en || '';
+          editTypeInput.value = row.lexicon_type || '引入词条';
+          openDrawer();
+        });
+      });
+
+      const deleteBtns = document.querySelectorAll('.delete-row-btn');
+      deleteBtns.forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          const tr = e.target.closest('tr');
+          const id = Number(tr && tr.dataset && tr.dataset.id);
+          if (!window.confirm('确认删除该词条吗？')) return;
+          lexiconRows = lexiconRows.filter((row) => row.id !== id);
+          setUnsavedChanges(true);
+          renderRows();
+        });
+      });
+
+      updateStats();
+    }
+
+    // 统计覆盖数与新增数，用于导入结果提示。
+    // 函数：summarizeMerge。
+    function summarizeMerge(currentRows, incomingRows) {
+      const currentMap = new Map();
+      toPlainRows(currentRows).forEach((row) => {
+        currentMap.set(row.source_text, row);
+      });
+      let overwriteCount = 0;
+      let addCount = 0;
+      toPlainRows(incomingRows).forEach((row) => {
+        if (!row.source_text) return;
+        if (currentMap.has(row.source_text)) {
+          const oldRow = currentMap.get(row.source_text);
+          if (oldRow.translation_en !== row.translation_en || oldRow.lexicon_type !== row.lexicon_type) {
+            overwriteCount++;
+          }
+        } else {
+          addCount++;
+        }
+      });
+      return { overwriteCount, addCount };
+    }
+
+    // 归一化词库行，便于与系统词库做稳定比较。
+    // 函数：normalizeRowsForCompare。
+    function normalizeRowsForCompare(rows) {
+      return dedupeBySourceText(toPlainRows(rows))
+        .sort((a, b) => a.source_text.localeCompare(b.source_text))
+        .map((row) => `${row.source_text}\u0001${row.translation_en}\u0001${row.lexicon_type || ''}`)
+        .join('\u0002');
+    }
+
+    // 函数：resetAiIdentifyState。
+    function resetAiIdentifyState() {
+      aiIdentifyFile = null;
+      isAiIdentifying = false;
+      aiIdentifyParsedRows = [];
+      aiIdentifyCandidateRows = [];
+      aiIdentifyFilteredRows = [];
+      aiIdentifySelectedSet = new Set();
+      aiIdentifyFilteredExistingCount = 0;
+      aiIdentifyFileInput.value = '';
+      aiIdentifyFileHint.textContent = '未选择文件';
+      aiIdentifyChooseActionGroup.style.display = 'flex';
+      aiIdentifySelectedActionGroup.style.display = 'none';
+      aiIdentifyResultWrap.style.display = 'none';
+      aiIdentifyResultTbody.innerHTML = '';
+      aiIdentifySelectAll.checked = false;
+      aiIdentifySelectAll.indeterminate = false;
+      aiIdentifyStats.textContent = '候选 0 条';
+      aiIdentifyHighOnly.checked = false;
+      setAiIdentifyRunning(false);
+      aiIdentifyConfirmBtn.disabled = true;
+    }
+
+    // 函数：openAiIdentifyModal。
+    function openAiIdentifyModal() {
+      resetAiIdentifyState();
+      aiIdentifyMask.style.display = 'flex';
+    }
+
+    // 函数：closeAiIdentifyModal。
+    function closeAiIdentifyModal() {
+      aiIdentifyMask.style.display = 'none';
+    }
+
+    // 函数：selectAiIdentifyFile。
+    function selectAiIdentifyFile(file) {
+      if (!file) return false;
+      const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv';
+      if (!isCsv) {
+        alert('仅支持 CSV 文件');
+        return false;
+      }
+      aiIdentifyFile = file;
+      aiIdentifyParsedRows = [];
+      aiIdentifyCandidateRows = [];
+      aiIdentifyFilteredRows = [];
+      aiIdentifySelectedSet = new Set();
+      aiIdentifyResultWrap.style.display = 'none';
+      aiIdentifyFileHint.textContent = `已选择：${file.name} · ${(file.size / 1024).toFixed(1)} KB`;
+      aiIdentifyChooseActionGroup.style.display = 'none';
+      aiIdentifySelectedActionGroup.style.display = 'flex';
+      return true;
+    }
+
+    // 函数：parseAiIdentifyRowsFromCsvText。
+    function parseAiIdentifyRowsFromCsvText(content) {
+      const matrix = parseCsv(content);
+      if (matrix.length < 2) {
+        throw new Error('CSV 数据不足，请确认包含表头和数据行');
+      }
+      const headers = matrix[0];
+      const dataRows = matrix.slice(1);
+      const keyIdx = headerIndex(headers, ['key', '词条key', '词条_key']);
+      const sourceIdx = headerIndex(headers, ['source_text', 'source', '词条', '中文词条', 'text']);
+      const contextIdx = headerIndex(headers, ['context_info', 'context', '上下文', '场景']);
+      if (keyIdx < 0 || sourceIdx < 0 || contextIdx < 0) {
+        throw new Error('CSV 缺少必填列：key/source_text/context_info（支持常见中文别名）');
+      }
+
+      return dataRows
+        .map((cols) => ({
+          key: String(cols[keyIdx] || '').trim(),
+          source_text: String(cols[sourceIdx] || '').trim(),
+          context_info: String(cols[contextIdx] || '').trim()
+        }))
+        .filter((row) => row.key || row.source_text || row.context_info);
+    }
+
+    // 函数：parseAiIdentifyFileRows。
+    function parseAiIdentifyFileRows(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const rows = parseAiIdentifyRowsFromCsvText(String(reader.result || ''));
+            resolve(rows);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = () => reject(new Error('文件读取失败，请重试'));
+        reader.readAsText(file, 'utf-8');
+      });
+    }
+
+    // 函数：updateAiIdentifyStats。
+    function updateAiIdentifyStats() {
+      const selectedCount = aiIdentifySelectedSet.size;
+      const visibleSelectedCount = aiIdentifyFilteredRows.filter((row) => aiIdentifySelectedSet.has(row.source_text)).length;
+      aiIdentifyStats.textContent = `上传 ${aiIdentifyParsedRows.length} 条｜过滤已存在 ${aiIdentifyFilteredExistingCount} 条｜候选 ${aiIdentifyCandidateRows.length} 条｜当前展示 ${aiIdentifyFilteredRows.length} 条｜已选择 ${selectedCount} 条`;
+      aiIdentifyConfirmBtn.disabled = selectedCount === 0;
+      aiIdentifySelectAll.checked = aiIdentifyFilteredRows.length > 0 && visibleSelectedCount === aiIdentifyFilteredRows.length;
+      aiIdentifySelectAll.indeterminate = visibleSelectedCount > 0 && visibleSelectedCount < aiIdentifyFilteredRows.length;
+    }
+
+    // 函数：normalizeConfidence。
+    function normalizeConfidence(value) {
+      const text = String(value || '').trim();
+      return text === '高' || text === '中' || text === '低' ? text : '中';
+    }
+
+    // 函数：setAiIdentifyRunning。
+    function setAiIdentifyRunning(next) {
+      isAiIdentifying = Boolean(next);
+      runAiIdentifyBtn.disabled = isAiIdentifying;
+      runAiIdentifyBtn.textContent = isAiIdentifying ? '鉴别中...' : 'AI鉴别';
+      aiIdentifyPickFileBtn.style.display = isAiIdentifying ? 'none' : '';
+      aiIdentifyRechooseFileBtn.style.display = isAiIdentifying ? 'none' : '';
+      aiIdentifyRemoveFileBtn.style.display = isAiIdentifying ? 'none' : '';
+      aiIdentifyRechooseFileBtn.disabled = isAiIdentifying;
+      aiIdentifyRemoveFileBtn.disabled = isAiIdentifying;
+      if (isAiIdentifying) aiIdentifyConfirmBtn.disabled = true;
+    }
+
+    // 函数：getConfidenceRank。
+    function getConfidenceRank(value) {
+      const normalized = normalizeConfidence(value);
+      if (normalized === '高') return 3;
+      if (normalized === '中') return 2;
+      if (normalized === '低') return 1;
+      return 0;
+    }
+
+    // 函数：getConfidenceClass。
+    function getConfidenceClass(value) {
+      const normalized = normalizeConfidence(value);
+      if (normalized === '高') return 'tag';
+      if (normalized === '中') return 'tag neutral';
+      return 'tag warn';
+    }
+
+    // 函数：renderAiIdentifyCandidates。
+    function renderAiIdentifyCandidates() {
+      const highOnly = Boolean(aiIdentifyHighOnly.checked);
+      aiIdentifyFilteredRows = highOnly
+        ? aiIdentifyCandidateRows.filter((row) => row.confidence === '高')
+        : aiIdentifyCandidateRows.slice();
+
+      if (!aiIdentifyFilteredRows.length) {
+        aiIdentifyResultTbody.innerHTML = `
+          <tr>
+            <td colspan="4" class="table-empty">
+              <div class="table-empty-box">
+                <div class="table-empty-emoji">🧩</div>
+                <div class="table-empty-title">当前筛选下没有候选词条</div>
+                <div class="table-empty-desc">可取消“仅看高置信度”或重新鉴别</div>
+              </div>
+            </td>
+          </tr>
+        `;
+        updateAiIdentifyStats();
+        return;
+      }
+
+      aiIdentifyResultTbody.innerHTML = aiIdentifyFilteredRows.map((row, idx) => `
+        <tr data-index="${idx}">
+          <td>
+            <input class="ai-identify-row-check" type="checkbox" ${aiIdentifySelectedSet.has(row.source_text) ? 'checked' : ''} />
+          </td>
+          <td><span class="${getConfidenceClass(row.confidence || '中')}">${escapeHtml(row.confidence || '中')}</span></td>
+          <td class="cell-multiline">${escapeHtml(row.source_text)}</td>
+          <td class="cell-multiline">${escapeHtml(row.translation_en)}</td>
+        </tr>
+      `).join('');
+
+      const checks = aiIdentifyResultTbody.querySelectorAll('.ai-identify-row-check');
+      checks.forEach((input, idx) => {
+        input.addEventListener('change', (event) => {
+          const row = aiIdentifyFilteredRows[idx];
+          if (!row) return;
+          if (event.target.checked) {
+            aiIdentifySelectedSet.add(row.source_text);
+          } else {
+            aiIdentifySelectedSet.delete(row.source_text);
+          }
+          updateAiIdentifyStats();
+        });
+      });
+
+      updateAiIdentifyStats();
+    }
+
+    // 函数：runAiIdentify。
+    async function runAiIdentify() {
+      if (!aiIdentifyFile || isAiIdentifying) {
+        if (!aiIdentifyFile) alert('请先上传 CSV 文件');
+        return;
+      }
+
+      setAiIdentifyRunning(true);
+      try {
+        const parsedRows = await parseAiIdentifyFileRows(aiIdentifyFile);
+        aiIdentifyParsedRows = parsedRows;
+
+        const existingSourceSet = new Set(
+          toPlainRows(lexiconRows).map((row) => String(row.source_text || '').trim()).filter(Boolean)
+        );
+        const dedupedBySource = dedupeBySourceText(
+          parsedRows.map((row) => ({
+            source_text: row.source_text,
+            translation_en: '',
+            lexicon_type: ''
+          }))
+        ).map((row) => row.source_text);
+        const sourceToSample = new Map();
+        parsedRows.forEach((row) => {
+          const sourceText = String(row.source_text || '').trim();
+          if (!sourceText || sourceToSample.has(sourceText)) return;
+          sourceToSample.set(sourceText, {
+            key: String(row.key || '').trim(),
+            source_text: sourceText,
+            context_info: String(row.context_info || '').trim()
+          });
+        });
+        const dedupedRows = dedupedBySource
+          .map((sourceText) => sourceToSample.get(sourceText))
+          .filter(Boolean);
+        const candidateInputRows = dedupedRows.filter((row) => row.source_text && !existingSourceSet.has(row.source_text));
+        aiIdentifyFilteredExistingCount = dedupedRows.length - candidateInputRows.length;
+
+        if (!candidateInputRows.length) {
+          aiIdentifyCandidateRows = [];
+          aiIdentifyFilteredRows = [];
+          aiIdentifySelectedSet = new Set();
+          aiIdentifyResultWrap.style.display = 'block';
+          renderAiIdentifyCandidates();
+          return;
+        }
+
+        const resp = await fetch('/api/identify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rows: candidateInputRows,
+            lexicon_rows: toPlainRows(lexiconRows)
+          })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const message = String(data?.message || data?.error || `请求失败：${resp.status}`);
+          throw new Error(message);
+        }
+        const resultRows = Array.isArray(data?.rows) ? data.rows : [];
+        const confidenceMap = new Map();
+        resultRows.forEach((item) => {
+          const sourceText = String(item?.source_text || item?.source || '').trim();
+          if (!sourceText) return;
+          confidenceMap.set(sourceText, normalizeConfidence(item?.confidence));
+        });
+        aiIdentifyCandidateRows = dedupeBySourceText(
+          resultRows.map((row) => ({
+            source_text: String(row?.source_text || row?.source || '').trim(),
+            translation_en: String(row?.translation_en || row?.translation || '').trim(),
+            confidence: normalizeConfidence(row?.confidence),
+            lexicon_type: 'AI鉴别'
+          }))
+            .filter((row) => row.source_text && row.translation_en && !existingSourceSet.has(row.source_text))
+        )
+          .map((row) => ({
+            source_text: row.source_text,
+            translation_en: row.translation_en,
+            confidence: confidenceMap.get(row.source_text) || '中'
+          }))
+          .sort((a, b) => getConfidenceRank(b.confidence) - getConfidenceRank(a.confidence));
+        aiIdentifySelectedSet = new Set();
+        aiIdentifyResultWrap.style.display = 'block';
+        renderAiIdentifyCandidates();
+      } catch (err) {
+        alert(err.message || String(err));
+      } finally {
+        setAiIdentifyRunning(false);
+      }
+    }
+
+    // 函数：confirmAiIdentifySelection。
+    function confirmAiIdentifySelection() {
+      const selectedRows = aiIdentifyCandidateRows
+        .filter((row) => aiIdentifySelectedSet.has(row.source_text))
+        .map((row) => ({
+          source_text: row.source_text,
+          translation_en: row.translation_en,
+          lexicon_type: 'AI鉴别'
+        }));
+
+      if (!selectedRows.length) {
+        alert('请至少选择 1 条候选词条');
+        return;
+      }
+
+      const mergeStats = summarizeMerge(lexiconRows, selectedRows);
+      const mergedRows = mergeRowsWithIncomingPriority(lexiconRows, selectedRows);
+      lexiconRows = reindexRows(mergedRows);
+      setUnsavedChanges(true);
+      renderRows();
+      closeAiIdentifyModal();
+      alert(`AI鉴别已加入：候选 ${aiIdentifyCandidateRows.length} 条，选择 ${selectedRows.length} 条，覆盖 ${mergeStats.overwriteCount} 条，新增 ${mergeStats.addCount} 条，当前 ${lexiconRows.length} 条`);
+    }
+
+    // 函数：importFromCsvFile。
+    function importFromCsvFile(file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const content = String(reader.result || '');
+        const matrix = parseCsv(content);
+        if (matrix.length < 2) {
+          alert('CSV 数据不足，请确认包含表头和数据行');
+          finishParsing();
+          return;
+        }
+
+        const headers = matrix[0];
+        const dataRows = matrix.slice(1);
+        const sourceIdx = headerIndex(headers, ['source_text', 'source', '词条', '中文词条', 'text']);
+        const translationIdx = headerIndex(headers, ['translation_en', 'translation', '英文翻译', '英文']);
+
+        if (sourceIdx < 0 || translationIdx < 0) {
+          alert('CSV 缺少必填列：source_text, translation_en');
+          finishParsing();
+          return;
+        }
+
+        let skippedEmptySource = 0;
+        const parsedRows = dataRows.map((cols) => ({
+          source_text: String(cols[sourceIdx] || '').trim(),
+          translation_en: String(cols[translationIdx] || '').trim(),
+          lexicon_type: '导入词条'
+        })).filter((row) => {
+          if (!row.source_text) {
+            skippedEmptySource++;
+            return false;
+          }
+          return true;
+        });
+
+        const totalRows = parsedRows.length;
+        const dedupedRows = dedupeBySourceText(parsedRows);
+        const dedupedCount = totalRows - dedupedRows.length;
+        const mergeStats = summarizeMerge(lexiconRows, dedupedRows);
+        const mergedRows = mergeRowsWithIncomingPriority(lexiconRows, dedupedRows);
+        lexiconRows = reindexRows(mergedRows);
+        setUnsavedChanges(true);
+        renderRows();
+        resetSelectionUI();
+        alert(`导入完成：有效 ${totalRows} 条，导入内去重 ${dedupedCount} 条，覆盖 ${mergeStats.overwriteCount} 条，新增 ${mergeStats.addCount} 条，空词条跳过 ${skippedEmptySource} 条，当前 ${lexiconRows.length} 条`);
+        finishParsing();
+      };
+      reader.onerror = () => {
+        alert('文件解析失败，请重试');
+        finishParsing();
+      };
+      reader.readAsText(file, 'utf-8');
+    }
+
+    chooseFileBtn.addEventListener('click', () => {
+      csvFileInput.click();
+    });
+
+    csvFileInput.addEventListener('change', (event) => {
+      const file = event.target.files && event.target.files[0];
+      selectCsvFile(file);
+    });
+
+    if (dropzone) {
+      dropzone.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        dropzone.classList.add('dragover');
+      });
+      dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('dragover');
+      });
+      dropzone.addEventListener('drop', (event) => {
+        event.preventDefault();
+        dropzone.classList.remove('dragover');
+        if (isParsing) return;
+        const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+        selectCsvFile(file);
+      });
+    }
+
+    parseFileBtn.addEventListener('click', () => {
+      if (!selectedCsvFile) {
+        alert('请先选择 CSV 文件');
+        return;
+      }
+      if (isParsing) return;
+      isParsing = true;
+      parseFileBtn.textContent = '解析中...';
+      parseFileBtn.disabled = true;
+      rechooseFileBtn.disabled = true;
+      removeFileBtn.disabled = true;
+      importFromCsvFile(selectedCsvFile);
+    });
+
+    rechooseFileBtn.addEventListener('click', () => {
+      if (isParsing) return;
+      csvFileInput.click();
+    });
+
+    removeFileBtn.addEventListener('click', () => {
+      if (isParsing) return;
+      resetSelectionUI();
+    });
+
+    loadStoredLexiconBtn.addEventListener('click', async () => {
+      if (hasUnsavedChanges && !window.confirm('当前有未更新的改动，继续引入系统词库将覆盖同名词条，是否继续？')) {
+        return;
+      }
+      const originalText = loadStoredLexiconBtn.textContent;
+      loadStoredLexiconBtn.disabled = true;
+      loadStoredLexiconBtn.textContent = '引入中...';
+      try {
+        const rows = await fetchStoredLexiconRows();
+        rows.forEach((row) => {
+          row.lexicon_type = '引入词条';
+        });
+        const mergeStats = summarizeMerge(lexiconRows, rows);
+        const mergedRows = mergeRowsWithIncomingPriority(lexiconRows, rows);
+        lexiconRows = reindexRows(mergedRows);
+        const equalsStored = normalizeRowsForCompare(lexiconRows) === normalizeRowsForCompare(rows);
+        setUnsavedChanges(!equalsStored);
+        renderRows();
+        alert(`系统词库引入完成：覆盖 ${mergeStats.overwriteCount} 条，新增 ${mergeStats.addCount} 条，当前 ${lexiconRows.length} 条`);
+      } catch (err) {
+        alert(err.message || String(err));
+      } finally {
+        loadStoredLexiconBtn.disabled = false;
+        loadStoredLexiconBtn.textContent = originalText;
+      }
+    });
+
+    updateLexiconBtn.addEventListener('click', async () => {
+      if (!hasUnsavedChanges || isUpdatingLexicon) return;
+      isUpdatingLexicon = true;
+      updateLexiconBtn.disabled = true;
+      updateLexiconBtn.textContent = '更新中...';
+      try {
+        await updateStoredLexiconRows();
+        setUnsavedChanges(false);
+        renderRows();
+        alert(`系统词库更新成功：共 ${lexiconRows.length} 条`);
+      } catch (err) {
+        alert(err.message || String(err));
+      } finally {
+        isUpdatingLexicon = false;
+        updateLexiconBtn.textContent = hasUnsavedChanges ? '更新系统词库（待更新）' : '更新系统词库';
+        updateLexiconBtn.disabled = !hasUnsavedChanges;
+      }
+    });
+
+    exportLexiconBtn.addEventListener('click', () => {
+      if (!lexiconRows.length) {
+        alert('当前词库为空，无可导出内容');
+        return;
+      }
+      const headers = ['source_text', 'translation_en', 'lexicon_type'];
+      const lines = [headers.join(',')];
+      lexiconRows.forEach((row) => {
+        lines.push([row.source_text, row.translation_en, row.lexicon_type || '引入词条'].map(toCsvField).join(','));
+      });
+      const csvContent = `\uFEFF${lines.join('\n')}`;
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `standard_lexicon_${ts}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    downloadTemplateBtn.addEventListener('click', () => {
+      const lines = [
+        'source_text,translation_en,lexicon_type',
+        '可用余额,Available Balance,导入词条',
+        '余额不足,Insufficient Balance,导入词条'
+      ];
+      const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'standard_lexicon_template.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    openAiIdentifyBtn.addEventListener('click', openAiIdentifyModal);
+    cancelAiIdentifyBtn.addEventListener('click', closeAiIdentifyModal);
+    aiIdentifyMask.addEventListener('click', (event) => {
+      if (event.target === aiIdentifyMask) closeAiIdentifyModal();
+    });
+    aiIdentifyPickFileBtn.addEventListener('click', () => {
+      aiIdentifyFileInput.click();
+    });
+    aiIdentifyFileInput.addEventListener('change', (event) => {
+      const file = event.target.files && event.target.files[0];
+      selectAiIdentifyFile(file);
+    });
+    aiIdentifyRechooseFileBtn.addEventListener('click', () => {
+      if (isAiIdentifying) return;
+      aiIdentifyFileInput.click();
+    });
+    aiIdentifyRemoveFileBtn.addEventListener('click', () => {
+      if (isAiIdentifying) return;
+      aiIdentifyFile = null;
+      aiIdentifyFileInput.value = '';
+      aiIdentifyFileHint.textContent = '未选择文件';
+      aiIdentifyChooseActionGroup.style.display = 'flex';
+      aiIdentifySelectedActionGroup.style.display = 'none';
+      aiIdentifyResultWrap.style.display = 'none';
+      aiIdentifyCandidateRows = [];
+      aiIdentifyFilteredRows = [];
+      aiIdentifySelectedSet = new Set();
+      aiIdentifyFilteredExistingCount = 0;
+      updateAiIdentifyStats();
+    });
+    if (aiIdentifyDropzone) {
+      aiIdentifyDropzone.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        aiIdentifyDropzone.classList.add('dragover');
+      });
+      aiIdentifyDropzone.addEventListener('dragleave', () => {
+        aiIdentifyDropzone.classList.remove('dragover');
+      });
+      aiIdentifyDropzone.addEventListener('drop', (event) => {
+        event.preventDefault();
+        aiIdentifyDropzone.classList.remove('dragover');
+        if (isAiIdentifying) return;
+        const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+        selectAiIdentifyFile(file);
+      });
+    }
+    runAiIdentifyBtn.addEventListener('click', runAiIdentify);
+    aiIdentifySelectAll.addEventListener('change', (event) => {
+      if (event.target.checked) {
+        aiIdentifyFilteredRows.forEach((row) => aiIdentifySelectedSet.add(row.source_text));
+      } else {
+        aiIdentifyFilteredRows.forEach((row) => aiIdentifySelectedSet.delete(row.source_text));
+      }
+      renderAiIdentifyCandidates();
+    });
+    aiIdentifyHighOnly.addEventListener('change', () => {
+      renderAiIdentifyCandidates();
+    });
+    aiIdentifyConfirmBtn.addEventListener('click', confirmAiIdentifySelection);
+
+    closeDrawerBtn.addEventListener('click', closeDrawer);
+    cancelDrawerBtn.addEventListener('click', closeDrawer);
+    drawerMask.addEventListener('click', closeDrawer);
+
+    saveDrawerBtn.addEventListener('click', () => {
+      if (editingRowId === null) return;
+      const sourceText = String(editSourceInput.value || '').trim();
+      const translation = String(editTranslationInput.value || '').trim();
+      if (!sourceText) {
+        alert('source_text 不能为空');
+        return;
+      }
+      const duplicate = lexiconRows.find((row) => row.id !== editingRowId && row.source_text === sourceText);
+      if (duplicate) {
+        alert('该 source_text 已存在，请修改后再保存');
+        return;
+      }
+      const row = lexiconRows.find((item) => item.id === editingRowId);
+      if (!row) {
+        closeDrawer();
+        return;
+      }
+      row.source_text = sourceText;
+      row.translation_en = translation;
+      setUnsavedChanges(true);
+      renderRows();
+      closeDrawer();
+    });
+
+    searchInput.addEventListener('input', (e) => {
+      searchKeyword = e.target.value || '';
+      renderRows();
+    });
+
+    resetSelectionUI();
+    setUnsavedChanges(false);
+    renderRows();
+  </script>
+</body>
+</html>
