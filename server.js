@@ -25,6 +25,8 @@ const MAX_IDENTIFY_ROWS = Number(process.env.MAX_IDENTIFY_ROWS || 300);
 const MAX_IDENTIFY_INPUT_CHARS = Number(process.env.MAX_IDENTIFY_INPUT_CHARS || 200000);
 const MAX_PROOFREAD_ROWS = Number(process.env.MAX_PROOFREAD_ROWS || 120);
 const MAX_PROOFREAD_INPUT_CHARS = Number(process.env.MAX_PROOFREAD_INPUT_CHARS || 180000);
+const RESPONSES_ENDPOINT_RE = /(^|\/)responses($|\/|\?)/i;
+const RESPONSES_ENDPOINT_HINT = '当前仅支持 responses 接口，请将 endpoint 配置为 /azure/responses';
 
 const MIME_MAP = {
   '.html': 'text/html; charset=utf-8',
@@ -39,7 +41,6 @@ const MIME_MAP = {
   '.svg': 'image/svg+xml'
 };
 
-// 函数：sendJson。
 function sendJson(res, status, payload) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -49,7 +50,6 @@ function sendJson(res, status, payload) {
 }
 
 // 轻量 CSV 解析器：用于词库读写相关流程。
-// 函数：parseCsv。
 function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -89,14 +89,12 @@ function parseCsv(text) {
   return rows;
 }
 
-// 函数：toCsvField。
 function toCsvField(value) {
   const text = String(value ?? '');
   if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
   return text;
 }
 
-// 函数：headerIndex。
 function headerIndex(headers, candidates) {
   const normalized = headers.map((h) => String(h).trim().toLowerCase());
   for (const key of candidates) {
@@ -106,7 +104,6 @@ function headerIndex(headers, candidates) {
   return -1;
 }
 
-// 函数：dedupeBySourceText。
 function dedupeBySourceText(rows) {
   const map = new Map();
   rows.forEach((row) => {
@@ -121,7 +118,6 @@ function dedupeBySourceText(rows) {
   return Array.from(map.values());
 }
 
-// 函数：ensureLexiconFile。
 async function ensureLexiconFile() {
   await fs.promises.mkdir(path.dirname(LEXICON_FILE), { recursive: true });
   if (!fs.existsSync(LEXICON_FILE)) {
@@ -135,7 +131,6 @@ async function ensureLexiconFile() {
 }
 
 // 从 CSV 读取并归一化标准词库数据。
-// 函数：readLexiconRows。
 async function readLexiconRows() {
   await ensureLexiconFile();
   const content = await fs.promises.readFile(LEXICON_FILE, 'utf-8');
@@ -156,7 +151,6 @@ async function readLexiconRows() {
 }
 
 // 原子化写入词库数据（先写临时文件再重命名）。
-// 函数：writeLexiconRows。
 async function writeLexiconRows(rows) {
   await ensureLexiconFile();
   const normalized = dedupeBySourceText(rows);
@@ -171,7 +165,6 @@ async function writeLexiconRows(rows) {
   return normalized;
 }
 
-// 函数：readBody。
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
@@ -188,7 +181,6 @@ function readBody(req) {
 }
 
 // 从 ai-config.local.js 读取本地代理配置。
-// 函数：loadConfig。
 function loadConfig() {
   const envApiKey = String(process.env.AI_API_KEY || process.env.OPENAI_API_KEY || '').trim();
   const envBaseUrl = String(process.env.AI_BASE_URL || process.env.OPENAI_BASE_URL || '').trim();
@@ -223,7 +215,6 @@ function loadConfig() {
   };
 }
 
-// 函数：requestJson。
 function requestJson(urlString, options, bodyObject) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlString);
@@ -259,18 +250,15 @@ function requestJson(urlString, options, bodyObject) {
   });
 }
 
-// 函数：isRetryableNetworkError。
 function isRetryableNetworkError(err) {
   const msg = String(err?.message || '');
   return /上游请求超时|ETIMEDOUT|ECONNRESET|socket hang up|EAI_AGAIN|ECONNREFUSED|ENOTFOUND/i.test(msg);
 }
 
-// 函数：sleep。
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 函数：requestJsonWithRetry。
 async function requestJsonWithRetry(urlString, options, bodyObject) {
   let lastError = null;
   // 仅在网络抖动或超时时进行重试。
@@ -287,7 +275,6 @@ async function requestJsonWithRetry(urlString, options, bodyObject) {
   throw lastError || new Error('上游请求失败');
 }
 
-// 函数：loadPromptTemplate。
 function loadPromptTemplate() {
   if (!fs.existsSync(PROMPT_TEMPLATE_FILE)) {
     throw new Error(`缺少 Prompt 模板文件：${PROMPT_TEMPLATE_FILE}`);
@@ -295,7 +282,6 @@ function loadPromptTemplate() {
   return fs.readFileSync(PROMPT_TEMPLATE_FILE, 'utf-8');
 }
 
-// 函数：loadIdentifyPromptTemplate。
 function loadIdentifyPromptTemplate() {
   if (!fs.existsSync(IDENTIFY_PROMPT_TEMPLATE_FILE)) {
     throw new Error(`缺少 Prompt 模板文件：${IDENTIFY_PROMPT_TEMPLATE_FILE}`);
@@ -303,7 +289,6 @@ function loadIdentifyPromptTemplate() {
   return fs.readFileSync(IDENTIFY_PROMPT_TEMPLATE_FILE, 'utf-8');
 }
 
-// 函数：loadProofreadPromptTemplate。
 function loadProofreadPromptTemplate() {
   if (!fs.existsSync(PROOFREAD_PROMPT_TEMPLATE_FILE)) {
     throw new Error(`缺少 Prompt 模板文件：${PROOFREAD_PROMPT_TEMPLATE_FILE}`);
@@ -311,7 +296,6 @@ function loadProofreadPromptTemplate() {
   return fs.readFileSync(PROOFREAD_PROMPT_TEMPLATE_FILE, 'utf-8');
 }
 
-// 函数：renderPromptTemplate。
 function renderPromptTemplate(template, variables) {
   return Object.keys(variables).reduce((text, key) => {
     const value = String(variables[key] ?? '');
@@ -319,9 +303,8 @@ function renderPromptTemplate(template, variables) {
   }, template);
 }
 
-// 函数：buildPrompt。
-function buildPrompt(rows, lexiconRows) {
-  const normalizedLexicon = Array.isArray(lexiconRows)
+function normalizeLexiconRows(lexiconRows) {
+  return Array.isArray(lexiconRows)
     ? lexiconRows
       .map((item) => ({
         source_text: String(item?.source_text || item?.source || '').trim(),
@@ -329,6 +312,10 @@ function buildPrompt(rows, lexiconRows) {
       }))
       .filter((item) => item.source_text && item.translation_en)
     : [];
+}
+
+function buildPrompt(rows, lexiconRows) {
+  const normalizedLexicon = normalizeLexiconRows(lexiconRows);
   const lexiconSection = normalizedLexicon.length
     ? [
       '标准词库（必须优先遵循，含近义词/变体复用规则）：',
@@ -349,16 +336,8 @@ function buildPrompt(rows, lexiconRows) {
   });
 }
 
-// 函数：buildIdentifyPrompt。
 function buildIdentifyPrompt(rows, lexiconRows) {
-  const normalizedLexicon = Array.isArray(lexiconRows)
-    ? lexiconRows
-      .map((item) => ({
-        source_text: String(item?.source_text || item?.source || '').trim(),
-        translation_en: String(item?.translation_en || item?.translation || '').trim()
-      }))
-      .filter((item) => item.source_text && item.translation_en)
-    : [];
+  const normalizedLexicon = normalizeLexiconRows(lexiconRows);
 
   const template = loadIdentifyPromptTemplate();
   return renderPromptTemplate(template, {
@@ -367,16 +346,8 @@ function buildIdentifyPrompt(rows, lexiconRows) {
   });
 }
 
-// 函数：buildProofreadPrompt。
 function buildProofreadPrompt(rows, lexiconRows) {
-  const normalizedLexicon = Array.isArray(lexiconRows)
-    ? lexiconRows
-      .map((item) => ({
-        source_text: String(item?.source_text || item?.source || '').trim(),
-        translation_en: String(item?.translation_en || item?.translation || '').trim()
-      }))
-      .filter((item) => item.source_text && item.translation_en)
-    : [];
+  const normalizedLexicon = normalizeLexiconRows(lexiconRows);
 
   const template = loadProofreadPromptTemplate();
   return renderPromptTemplate(template, {
@@ -385,7 +356,6 @@ function buildProofreadPrompt(rows, lexiconRows) {
   });
 }
 
-// 函数：buildResponsesPayload。
 function buildResponsesPayload(model, prompt) {
   return {
     model,
@@ -396,7 +366,6 @@ function buildResponsesPayload(model, prompt) {
   };
 }
 
-// 函数：extractContent。
 function extractContent(parsed) {
   if (typeof parsed?.output_text === 'string' && parsed.output_text.trim()) {
     return parsed.output_text;
@@ -412,7 +381,6 @@ function extractContent(parsed) {
   return '';
 }
 
-// 函数：tryParseJsonArray。
 function tryParseJsonArray(text) {
   const raw = String(text || '').trim();
   if (!raw) return null;
@@ -432,8 +400,57 @@ function tryParseJsonArray(text) {
   return null;
 }
 
+function sendHandledApiError(res, err, fallbackError) {
+  if (err && err.status && err.error) {
+    return sendJson(res, err.status, { error: err.error, message: String(err.message || '') });
+  }
+  return sendJson(res, 500, { error: fallbackError, message: String(err?.message || err) });
+}
+
+function makeApiError(status, error, message) {
+  const err = new Error(message);
+  err.status = status;
+  err.error = error;
+  return err;
+}
+
+function ensureResponsesEndpoint(cfg) {
+  if (!RESPONSES_ENDPOINT_RE.test(cfg.endpoint)) {
+    throw makeApiError(400, 'invalid_config', RESPONSES_ENDPOINT_HINT);
+  }
+}
+
+async function callResponsesApi(cfg, prompt) {
+  ensureResponsesEndpoint(cfg);
+  const upstreamUrl = `${cfg.baseUrl}${cfg.endpoint}`;
+  const payload = buildResponsesPayload(cfg.model, prompt);
+  return requestJsonWithRetry(upstreamUrl, {
+    headers: {
+      Authorization: `Bearer ${cfg.apiKey}`
+    }
+  }, payload);
+}
+
+function extractResponseContentOrThrow(upstreamResp) {
+  if (!upstreamResp.ok) {
+    throw makeApiError(upstreamResp.status || 500, 'upstream_error', upstreamResp.text);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(upstreamResp.text);
+  } catch (e) {
+    throw makeApiError(502, 'upstream_non_json', upstreamResp.text.slice(0, 500));
+  }
+
+  const content = extractContent(parsed);
+  if (!content) {
+    throw makeApiError(502, 'upstream_empty_content', upstreamResp.text.slice(0, 500));
+  }
+  return content;
+}
+
 // 翻译接口：校验入参、组装 Prompt、调用上游 responses 接口。
-// 函数：handleTranslate。
 async function handleTranslate(req, res) {
   try {
     const raw = await readBody(req);
@@ -463,53 +480,16 @@ async function handleTranslate(req, res) {
     }
 
     const cfg = loadConfig();
-    if (!/(^|\/)responses($|\/|\?)/i.test(cfg.endpoint)) {
-      return sendJson(res, 400, {
-        error: 'invalid_config',
-        message: '当前仅支持 responses 接口，请将 endpoint 配置为 /azure/responses'
-      });
-    }
-    const upstreamUrl = `${cfg.baseUrl}${cfg.endpoint}`;
     const prompt = buildPrompt(rows, lexiconRows);
-    const payload = buildResponsesPayload(cfg.model, prompt);
-    const upstreamResp = await requestJsonWithRetry(upstreamUrl, {
-      headers: {
-        Authorization: `Bearer ${cfg.apiKey}`
-      }
-    }, payload);
-
-    if (!upstreamResp.ok) {
-      return sendJson(res, upstreamResp.status || 500, {
-        error: 'upstream_error',
-        message: upstreamResp.text
-      });
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(upstreamResp.text);
-    } catch (e) {
-      return sendJson(res, 502, {
-        error: 'upstream_non_json',
-        message: upstreamResp.text.slice(0, 500)
-      });
-    }
-
-    const content = extractContent(parsed);
-    if (!content) {
-      return sendJson(res, 502, {
-        error: 'upstream_empty_content',
-        message: upstreamResp.text.slice(0, 500)
-      });
-    }
+    const upstreamResp = await callResponsesApi(cfg, prompt);
+    const content = extractResponseContentOrThrow(upstreamResp);
     return sendJson(res, 200, { content });
   } catch (err) {
-    return sendJson(res, 500, { error: 'proxy_error', message: String(err.message || err) });
+    return sendHandledApiError(res, err, 'proxy_error');
   }
 }
 
 // AI 鉴别接口：从候选词条中识别可作为系统词条的条目，并返回建议译文。
-// 函数：handleIdentify。
 async function handleIdentify(req, res) {
   try {
     const raw = await readBody(req);
@@ -539,45 +519,9 @@ async function handleIdentify(req, res) {
     }
 
     const cfg = loadConfig();
-    if (!/(^|\/)responses($|\/|\?)/i.test(cfg.endpoint)) {
-      return sendJson(res, 400, {
-        error: 'invalid_config',
-        message: '当前仅支持 responses 接口，请将 endpoint 配置为 /azure/responses'
-      });
-    }
-    const upstreamUrl = `${cfg.baseUrl}${cfg.endpoint}`;
     const prompt = buildIdentifyPrompt(rows, lexiconRows);
-    const payload = buildResponsesPayload(cfg.model, prompt);
-    const upstreamResp = await requestJsonWithRetry(upstreamUrl, {
-      headers: {
-        Authorization: `Bearer ${cfg.apiKey}`
-      }
-    }, payload);
-
-    if (!upstreamResp.ok) {
-      return sendJson(res, upstreamResp.status || 500, {
-        error: 'upstream_error',
-        message: upstreamResp.text
-      });
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(upstreamResp.text);
-    } catch (e) {
-      return sendJson(res, 502, {
-        error: 'upstream_non_json',
-        message: upstreamResp.text.slice(0, 500)
-      });
-    }
-
-    const content = extractContent(parsed);
-    if (!content) {
-      return sendJson(res, 502, {
-        error: 'upstream_empty_content',
-        message: upstreamResp.text.slice(0, 500)
-      });
-    }
+    const upstreamResp = await callResponsesApi(cfg, prompt);
+    const content = extractResponseContentOrThrow(upstreamResp);
 
     const arr = tryParseJsonArray(content);
     if (!arr) {
@@ -613,12 +557,11 @@ async function handleIdentify(req, res) {
 
     return sendJson(res, 200, { rows: normalized, count: normalized.length });
   } catch (err) {
-    return sendJson(res, 500, { error: 'identify_error', message: String(err.message || err) });
+    return sendHandledApiError(res, err, 'identify_error');
   }
 }
 
 // AI 校对接口：对已翻译结果做术语一致性与句式一致性修正。
-// 函数：handleProofread。
 async function handleProofread(req, res) {
   try {
     const raw = await readBody(req);
@@ -649,75 +592,25 @@ async function handleProofread(req, res) {
     }
 
     const cfg = loadConfig();
-    if (!/(^|\/)responses($|\/|\?)/i.test(cfg.endpoint)) {
-      return sendJson(res, 400, {
-        error: 'invalid_config',
-        message: '当前仅支持 responses 接口，请将 endpoint 配置为 /azure/responses'
-      });
-    }
-    const upstreamUrl = `${cfg.baseUrl}${cfg.endpoint}`;
     const prompt = buildProofreadPrompt(rows, lexiconRows);
-    const payload = buildResponsesPayload(cfg.model, prompt);
-    const upstreamResp = await requestJsonWithRetry(upstreamUrl, {
-      headers: {
-        Authorization: `Bearer ${cfg.apiKey}`
-      }
-    }, payload);
-
-    if (!upstreamResp.ok) {
-      return sendJson(res, upstreamResp.status || 500, {
-        error: 'upstream_error',
-        message: upstreamResp.text
-      });
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(upstreamResp.text);
-    } catch (e) {
-      return sendJson(res, 502, {
-        error: 'upstream_non_json',
-        message: upstreamResp.text.slice(0, 500)
-      });
-    }
-
-    const content = extractContent(parsed);
-    if (!content) {
-      return sendJson(res, 502, {
-        error: 'upstream_empty_content',
-        message: upstreamResp.text.slice(0, 500)
-      });
-    }
+    const upstreamResp = await callResponsesApi(cfg, prompt);
+    const content = extractResponseContentOrThrow(upstreamResp);
     return sendJson(res, 200, { content });
   } catch (err) {
-    return sendJson(res, 500, { error: 'proofread_error', message: String(err.message || err) });
+    return sendHandledApiError(res, err, 'proofread_error');
   }
 }
 
 // 本地探活：仅表示服务进程可用，不依赖上游 AI。
-// 函数：handleHealth。
 async function handleHealth(_req, res) {
   return sendJson(res, 200, { ok: true });
 }
 
 // 上游探活：校验 AI 配置和接口可用性。
-// 函数：handleUpstreamHealth。
 async function handleUpstreamHealth(_req, res) {
   try {
     const cfg = loadConfig();
-    if (!/(^|\/)responses($|\/|\?)/i.test(cfg.endpoint)) {
-      return sendJson(res, 400, {
-        ok: false,
-        message: '当前仅支持 responses 接口，请将 endpoint 配置为 /azure/responses'
-      });
-    }
-    const upstreamUrl = `${cfg.baseUrl}${cfg.endpoint}`;
-    const payload = buildResponsesPayload(cfg.model, '请返回 JSON: {"ok": true}');
-    const upstreamResp = await requestJsonWithRetry(upstreamUrl, {
-      headers: {
-        Authorization: `Bearer ${cfg.apiKey}`
-      }
-    }, payload);
+    const upstreamResp = await callResponsesApi(cfg, '请返回 JSON: {"ok": true}');
 
     if (!upstreamResp.ok) {
       return sendJson(res, upstreamResp.status || 500, {
@@ -727,11 +620,13 @@ async function handleUpstreamHealth(_req, res) {
     }
     return sendJson(res, 200, { ok: true });
   } catch (err) {
+    if (err && err.status && err.error) {
+      return sendJson(res, err.status, { ok: false, message: String(err.message || err) });
+    }
     return sendJson(res, 500, { ok: false, message: String(err.message || err) });
   }
 }
 
-// 函数：handleGetLexicon。
 async function handleGetLexicon(_req, res) {
   try {
     const rows = await readLexiconRows();
@@ -742,7 +637,6 @@ async function handleGetLexicon(_req, res) {
 }
 
 // 词库写入接口：归一化请求体并持久化到 CSV。
-// 函数：handleUpdateLexicon。
 async function handleUpdateLexicon(req, res) {
   try {
     const raw = await readBody(req);
@@ -760,7 +654,6 @@ async function handleUpdateLexicon(req, res) {
   }
 }
 
-// 函数：serveStatic。
 function serveStatic(req, res) {
   let pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
   if (pathname === '/') pathname = '/index.html';
