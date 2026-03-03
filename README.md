@@ -107,3 +107,43 @@ git push -u origin main
 说明：
 - 仓库已包含 `vercel.json`，会把所有路由交给 `server.js` 处理。
 - Vercel 上 `POST /api/lexicon` 写入的是 `/tmp/standard-lexicon.csv`，仅实例级临时存储，不保证长期持久化。
+
+## 固定 IP 后端部署（用于上游白名单）
+当上游网关启用了 IP 白名单时，建议改为：
+- 前端：继续放在 Vercel
+- 后端 API：部署到一台有固定公网 IP 的 Linux 服务器
+
+### 1. 在服务器启动后端
+```bash
+# 服务器上
+git clone https://github.com/Junpeng-Chen-Penguin/translation_gadget.git
+cd translation_gadget
+
+# 推荐用 pm2 守护
+npm i -g pm2
+HOST=0.0.0.0 PORT=8787 \
+AI_API_KEY='your_key' \
+AI_BASE_URL='https://your-proxy-domain/us' \
+AI_ENDPOINT='/azure/responses' \
+AI_MODEL='gpt-5.1-mini' \
+pm2 start server.js --name translation-gadget-api
+
+pm2 save
+pm2 startup
+```
+
+### 2. 放通服务器防火墙端口
+- 至少放通 `8787`（或你改成 `80/443` 反代后只放通 `80/443`）。
+
+### 3. 让 Vercel 仅转发 API 到固定 IP 后端
+在 Vercel 项目里增加 Rewrite（Project Settings -> Routing / Rewrites）：
+- Source: `/api/(.*)`
+- Destination: `http://<你的固定IP>:8787/api/$1`
+
+这样前端仍访问同域 `/api/*`，但实际由 Vercel 转发到你的固定 IP 后端。
+
+### 4. 上游白名单添加
+- 把你的服务器公网 IP 加入上游网关白名单。
+
+### 5. 验证
+- `https://你的vercel域名/api/health` 返回 `{"ok":true}` 即成功。
