@@ -5,7 +5,7 @@ const path = require('path');
 const vm = require('vm');
 const { URL } = require('url');
 
-const HOST = '127.0.0.1';
+const HOST = String(process.env.HOST || '0.0.0.0');
 const PORT = Number(process.env.PORT || 8787);
 const ROOT = __dirname;
 const IS_VERCEL = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
@@ -694,8 +694,15 @@ async function handleProofread(req, res) {
   }
 }
 
+// 本地探活：仅表示服务进程可用，不依赖上游 AI。
 // 函数：handleHealth。
 async function handleHealth(_req, res) {
+  return sendJson(res, 200, { ok: true });
+}
+
+// 上游探活：校验 AI 配置和接口可用性。
+// 函数：handleUpstreamHealth。
+async function handleUpstreamHealth(_req, res) {
   try {
     const cfg = loadConfig();
     if (!/(^|\/)responses($|\/|\?)/i.test(cfg.endpoint)) {
@@ -785,6 +792,7 @@ async function requestHandler(req, res) {
   if (pathname === '/api/identify' && req.method === 'POST') return handleIdentify(req, res);
   if (pathname === '/api/proofread' && req.method === 'POST') return handleProofread(req, res);
   if (pathname === '/api/health' && req.method === 'GET') return handleHealth(req, res);
+  if (pathname === '/api/health/upstream' && req.method === 'GET') return handleUpstreamHealth(req, res);
   if (pathname === '/api/lexicon' && req.method === 'GET') return handleGetLexicon(req, res);
   if (pathname === '/api/lexicon' && req.method === 'POST') return handleUpdateLexicon(req, res);
 
