@@ -784,7 +784,7 @@
               }
             });
             const aiDoneCount = Math.min((i + 1) * TRANSLATE_BATCH_SIZE, unresolved.length);
-            translateStep2Desc.textContent = `AI 已处理 ${aiDoneCount}/${unresolved.length} 条，语义命中标准词库 ${semanticLexiconHitCount} 条（批次词库 ${batchLexiconRows.length} 条）`;
+            translateStep2Desc.textContent = `AI 已处理 ${aiDoneCount}/${unresolved.length} 条，语义命中标准词库 ${semanticLexiconHitCount} 条`;
             updateTranslateProgressByPhase('step2', aiDoneCount, unresolved.length, `🚀 AI 已完成 ${aiDoneCount}/${unresolved.length} 条`);
           }
 
@@ -951,7 +951,7 @@
         const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
         const a = document.createElement('a');
         a.href = url;
-        a.download = `i18n_export_${ts}.csv`;
+        a.download = `翻译结果_${ts}.csv`;
         document.body.appendChild(a);
         a.click();
         a.remove();

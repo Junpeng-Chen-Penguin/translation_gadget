@@ -1,18 +1,14 @@
+require('dotenv').config();
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
 const { URL } = require('url');
+const mysql = require('mysql2/promise');
 
 const HOST = String(process.env.HOST || '0.0.0.0');
 const PORT = Number(process.env.PORT || 8787);
 const ROOT = __dirname;
-const IS_VERCEL = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
-const DEFAULT_LEXICON_FILE = path.join(ROOT, 'data', 'standard-lexicon.csv');
-const LEXICON_FILE = IS_VERCEL
-  ? path.join('/tmp', 'standard-lexicon.csv')
-  : DEFAULT_LEXICON_FILE;
 const PROMPT_TEMPLATE_FILE = path.join(ROOT, 'prompts', 'ai-translate.prompt.md');
 const IDENTIFY_PROMPT_TEMPLATE_FILE = path.join(ROOT, 'prompts', 'ai-identify.prompt.md');
 const PROOFREAD_PROMPT_TEMPLATE_FILE = path.join(ROOT, 'prompts', 'ai-proofread.prompt.md');
@@ -49,61 +45,6 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-// 轻量 CSV 解析器：用于词库读写相关流程。
-function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let field = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const next = text[i + 1];
-
-    if (ch === '"' && inQuotes && next === '"') {
-      field += '"';
-      i++;
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-    if (ch === ',' && !inQuotes) {
-      row.push(field);
-      field = '';
-      continue;
-    }
-    if ((ch === '\n' || ch === '\r') && !inQuotes) {
-      if (ch === '\r' && next === '\n') i++;
-      row.push(field);
-      field = '';
-      if (row.some((v) => String(v).trim() !== '')) rows.push(row);
-      row = [];
-      continue;
-    }
-    field += ch;
-  }
-  row.push(field);
-  if (row.some((v) => String(v).trim() !== '')) rows.push(row);
-  return rows;
-}
-
-function toCsvField(value) {
-  const text = String(value ?? '');
-  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-  return text;
-}
-
-function headerIndex(headers, candidates) {
-  const normalized = headers.map((h) => String(h).trim().toLowerCase());
-  for (const key of candidates) {
-    const idx = normalized.indexOf(key);
-    if (idx >= 0) return idx;
-  }
-  return -1;
-}
-
 function dedupeBySourceText(rows) {
   const map = new Map();
   rows.forEach((row) => {
@@ -118,50 +59,83 @@ function dedupeBySourceText(rows) {
   return Array.from(map.values());
 }
 
-async function ensureLexiconFile() {
-  await fs.promises.mkdir(path.dirname(LEXICON_FILE), { recursive: true });
-  if (!fs.existsSync(LEXICON_FILE)) {
-    if (fs.existsSync(DEFAULT_LEXICON_FILE)) {
-      const seed = await fs.promises.readFile(DEFAULT_LEXICON_FILE, 'utf-8');
-      await fs.promises.writeFile(LEXICON_FILE, String(seed || 'source_text,translation_en,lexicon_type\n'), 'utf-8');
-      return;
-    }
-    await fs.promises.writeFile(LEXICON_FILE, 'source_text,translation_en,lexicon_type\n', 'utf-8');
+let _pool = null;
+
+function loadDbConfig() {
+  const host = String(process.env.DB_HOST || '').trim();
+  if (!host) {
+    throw new Error('缺少数据库配置：请在 .env 文件中设置 DB_HOST');
   }
+  return {
+    host,
+    port: Number(process.env.DB_PORT || 3306),
+    user: String(process.env.DB_USER || 'root'),
+    password: String(process.env.DB_PASSWORD || ''),
+    database: String(process.env.DB_DATABASE || 'standard_lexicon')
+  };
 }
 
-// 从 CSV 读取并归一化标准词库数据。
+function getPool() {
+  if (!_pool) {
+    const dbCfg = loadDbConfig();
+    _pool = mysql.createPool({
+      host: dbCfg.host,
+      port: dbCfg.port,
+      user: dbCfg.user,
+      password: dbCfg.password,
+      database: dbCfg.database,
+      waitForConnections: true,
+      connectionLimit: 5,
+      charset: 'utf8mb4'
+    });
+  }
+  return _pool;
+}
+
+async function ensureTable() {
+  const pool = getPool();
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS \`lexicon\` (
+      \`id\`             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      \`source_text\`    VARCHAR(500) NOT NULL COMMENT '中文词条',
+      \`translation_en\` VARCHAR(500) NOT NULL DEFAULT '' COMMENT '英文翻译',
+      \`lexicon_type\`   VARCHAR(50)  NOT NULL DEFAULT '引入词条' COMMENT '词条来源类型',
+      \`created_at\`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`),
+      UNIQUE KEY \`uk_source_text\` (\`source_text\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+// 从 MySQL 读取标准词库数据。
 async function readLexiconRows() {
-  await ensureLexiconFile();
-  const content = await fs.promises.readFile(LEXICON_FILE, 'utf-8');
-  const matrix = parseCsv(String(content || ''));
-  if (!matrix.length) return [];
-  const headers = matrix[0];
-  const rows = matrix.slice(1);
-  const sourceIdx = headerIndex(headers, ['source_text', 'source', '词条', '中文词条', 'text']);
-  const translationIdx = headerIndex(headers, ['translation_en', 'translation', '英文翻译', '英文']);
-  const typeIdx = headerIndex(headers, ['lexicon_type', 'type', '来源类型', '词条类型']);
-  if (sourceIdx < 0 || translationIdx < 0) return [];
-  const normalized = rows.map((cols) => ({
-    source_text: String(cols[sourceIdx] || '').trim(),
-    translation_en: String(cols[translationIdx] || '').trim(),
-    lexicon_type: String(typeIdx >= 0 ? cols[typeIdx] : '').trim() || '引入词条'
-  }));
-  return dedupeBySourceText(normalized);
+  const pool = getPool();
+  const [rows] = await pool.execute(
+    'SELECT source_text, translation_en, lexicon_type FROM lexicon ORDER BY id'
+  );
+  return rows;
 }
 
-// 原子化写入词库数据（先写临时文件再重命名）。
+// 事务内全量覆盖写入词库数据。
 async function writeLexiconRows(rows) {
-  await ensureLexiconFile();
   const normalized = dedupeBySourceText(rows);
-  const lines = ['source_text,translation_en,lexicon_type'];
-  normalized.forEach((row) => {
-    lines.push([row.source_text, row.translation_en, row.lexicon_type || '引入词条'].map(toCsvField).join(','));
-  });
-  const content = `${lines.join('\n')}\n`;
-  const tmpFile = `${LEXICON_FILE}.tmp`;
-  await fs.promises.writeFile(tmpFile, content, 'utf-8');
-  await fs.promises.rename(tmpFile, LEXICON_FILE);
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.execute('DELETE FROM lexicon');
+    if (normalized.length > 0) {
+      const values = normalized.map((r) => [r.source_text, r.translation_en, r.lexicon_type || '引入词条']);
+      await conn.query('INSERT INTO lexicon (source_text, translation_en, lexicon_type) VALUES ?', [values]);
+    }
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
   return normalized;
 }
 
@@ -180,38 +154,17 @@ function readBody(req) {
   });
 }
 
-// 从 ai-config.local.js 读取本地代理配置。
+// 从环境变量（.env）读取 AI 代理配置。
 function loadConfig() {
-  const envApiKey = String(process.env.AI_API_KEY || process.env.OPENAI_API_KEY || '').trim();
-  const envBaseUrl = String(process.env.AI_BASE_URL || process.env.OPENAI_BASE_URL || '').trim();
-  const envEndpoint = String(process.env.AI_ENDPOINT || '').trim();
-  const envModel = String(process.env.AI_MODEL || '').trim();
-  if (envApiKey) {
-    return {
-      apiKey: envApiKey,
-      baseUrl: (envBaseUrl || 'https://api.openai.com/v1').replace(/\/$/, ''),
-      endpoint: envEndpoint || '/azure/responses',
-      model: envModel || 'gpt-5.1-mini'
-    };
-  }
-
-  const file = path.join(ROOT, 'ai-config.local.js');
-  if (!fs.existsSync(file)) {
-    throw new Error('缺少 AI 配置：请设置环境变量 AI_API_KEY，或提供 ai-config.local.js');
-  }
-  const source = fs.readFileSync(file, 'utf-8');
-  const sandbox = { window: {} };
-  vm.createContext(sandbox);
-  vm.runInContext(source, sandbox, { timeout: 1000 });
-  const cfg = sandbox.window && sandbox.window.AI_CONFIG ? sandbox.window.AI_CONFIG : {};
-  if (!cfg.apiKey) {
-    throw new Error('ai-config.local.js 未配置 apiKey');
+  const apiKey = String(process.env.AI_API_KEY || process.env.OPENAI_API_KEY || '').trim();
+  if (!apiKey) {
+    throw new Error('缺少 AI 配置：请在 .env 文件中设置 AI_API_KEY');
   }
   return {
-    apiKey: String(cfg.apiKey),
-    baseUrl: String(cfg.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, ''),
-    endpoint: String(cfg.endpoint || '/azure/responses'),
-    model: String(cfg.model || 'gpt-5.1-mini')
+    apiKey,
+    baseUrl: String(process.env.AI_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, ''),
+    endpoint: String(process.env.AI_ENDPOINT || '/azure/responses'),
+    model: String(process.env.AI_MODEL || 'gpt-5.1-mini')
   };
 }
 
@@ -636,7 +589,7 @@ async function handleGetLexicon(_req, res) {
   }
 }
 
-// 词库写入接口：归一化请求体并持久化到 CSV。
+// 词库写入接口：归一化请求体并持久化到 MySQL。
 async function handleUpdateLexicon(req, res) {
   try {
     const raw = await readBody(req);
@@ -695,8 +648,11 @@ async function requestHandler(req, res) {
 module.exports = requestHandler;
 
 if (require.main === module) {
-  const server = http.createServer(requestHandler);
-  server.listen(PORT, HOST, () => {
-    console.log(`Local server running: http://${HOST}:${PORT}`);
-  });
+  (async () => {
+    await ensureTable();
+    const server = http.createServer(requestHandler);
+    server.listen(PORT, HOST, () => {
+      console.log(`Local server running: http://${HOST}:${PORT}`);
+    });
+  })();
 }

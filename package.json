@@ -1,0 +1,13 @@
+{
+  "name": "standard-lexicon-server",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "migrate": "node scripts/migrate-csv-to-mysql.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "mysql2": "^3.12.0"
+  }
+}

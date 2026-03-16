@@ -1,8 +1,9 @@
 # Local secrets
 ai-config.local.js
+.env
 
-# Vercel
-.vercel/
+# Dependencies
+node_modules/
 
 # Logs
 *.log
@@ -13,5 +14,4 @@ pnpm-debug.log*
 
 # OS
 .DS_Store
-.vercel
 .env*.local
